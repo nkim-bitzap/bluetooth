@@ -1,4 +1,4 @@
-# bluetooth
+# BlueZ C programming examples
 
 Collection of C programming examples dealing with Bluetooth (LE) using BlueZ/GDBus.
 Prototyped on x64 and Raspberry Pi 3B+, both running Ubuntu 18.04 and BlueZ 5.50.
