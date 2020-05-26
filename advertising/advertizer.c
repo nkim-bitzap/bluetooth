@@ -122,6 +122,8 @@ static GVariant *get_service_uuids(void)
   g_variant_builder_add(builder, "s", adv_data.uuids[2]);
 
   GVariant *result = g_variant_builder_end(builder);
+  g_variant_builder_unref(builder);
+
   return result;
 }
 
