@@ -161,7 +161,7 @@ static void on_method_call(GDBusConnection *con,
 {
   g_print("Calling method '%s'", method_name);
 
-  if (strcmp(method_name, "NewConnection")) {
+  if (strcmp(method_name, "NewConnection") == 0) {
     g_print("Handling a new connection on the server side\n");
   }
 }
