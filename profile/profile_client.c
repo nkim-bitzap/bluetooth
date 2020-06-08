@@ -4,7 +4,7 @@
    Abstract: Simple C DBus/BlueZ profile registration example
 
    Description:
-     This handles the profile registraction on the client side.
+     This handles the profile registration on the client side.
      By registering the profile with "Role=client" the profile gets
      attached to each device known to the local adapter so far (
      discovered and paired). An IMPORTANT condition is that the
@@ -111,13 +111,18 @@ static void register_profile(gboolean enable)
     g_variant_builder_add(builder, "{sv}",
       "AutoConnect", g_variant_new_boolean(TRUE));
 
+    /* NOTE, lazy stuff, assume the entire service record to
+       require 2K bytes at most */
+    char sdp_record[2048] = {0};
+
     /* provide a service record to be inserted into the SDP
        database, test with 'sdptool' on your remote device
        whether you can find the record or not */
+    sprintf(sdp_record, MY_INTERCOM_SDP_RECORD,
+      27, 0xdead, "BITZAP-Intercom-Profile", 0);
+
     g_variant_builder_add(builder, "{sv}", "ServiceRecord",
-      g_variant_new_string(g_strdup_printf(
-        MY_INTERCOM_SDP_RECORD, 27, 0xdead,
-        "BITZAP-Intercom-Profile", 0)));
+      g_variant_new_string(sdp_record));
 
     dict = g_variant_builder_end(builder);
     g_variant_builder_unref(builder);
@@ -217,12 +222,14 @@ int main(int argc, char **argv)
   g_idle_add(on_loop_idle, NULL);
   g_main_loop_run(loop);
 
-  /* we are done, tear everything down now */
-  g_print("\nUnregistering profile object...");
+  /* we are done, tear everything down now. Don't wait to be
+     called back, bounce in the most ungraceful way for now */
+  g_print("\nUnregistering profile\n");
   register_profile(FALSE);
 
 done:
   g_main_loop_unref(loop);
+  g_dbus_node_info_unref(introspect_data);
   g_object_unref(conn);
   return 0;
 }
