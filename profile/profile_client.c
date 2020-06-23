@@ -1,19 +1,12 @@
 /******************************************************************************/
-/* File: profile_client.c
+/* File: rpm_control_profile.c
    Author: N.Kim
-   Abstract: Simple C DBus/BlueZ profile registration example
+   Abstract: BlueZ profile for controlling RPM of brushless motors
 
    Description:
-     This handles the profile registration on the client side.
-     By registering the profile with "Role=client" the profile gets
-     attached to each device known to the local adapter so far (
-     discovered and paired). An IMPORTANT condition is that the
-     profile HAS to be supported by a remote device in question.
-     IF NOT, you will have to register the same profile on the
-     remote device using the opposite role (see profile_server.c)
-     AND most probably pair again (best method for testing, drop
-     the device completely, register profile on the device, then
-     discover/pair again). */
+     Implementation of a BlueZ profile to be registered on a Bluetooth
+     device connected to the ESP to be controlled (which in turn goes
+     to a brushless motor propelling a small plane) */
 
 /******************************************************************************/
 
@@ -27,14 +20,16 @@
 
 #include <gio/gio.h>
 #include <gio/gnetworking.h>
+#include <gio/gunixfdmessage.h>
 #include <glib.h>
 
 #include "profile_record.h"
 
 static GDBusNodeInfo *introspect_data = NULL;
 static GMainLoop *loop = NULL;
-static GDBusConnection *conn = NULL;
+
 static int loop_done = 0;
+static int data_sent = 0;
 
 /******************************************************************************/
 
@@ -47,8 +42,8 @@ void on_signal_received(int signo)
 
 static gboolean on_loop_idle(gpointer udata)
 {
-  /* triggered via SIGTERM */
-  if (loop_done)
+  /* triggered via SIGINT */
+  if (loop_done || data_sent)
   {
     g_main_loop_quit(loop);
     return G_SOURCE_REMOVE;
@@ -68,7 +63,8 @@ void on_register_complete(GObject *source_object,
 
 /******************************************************************************/
 
-static void register_profile(gboolean enable)
+static void register_profile(GDBusConnection *conn,
+                             gboolean enable)
 {
   GVariant *args;
   const gchar *method_name;
@@ -111,18 +107,19 @@ static void register_profile(gboolean enable)
     g_variant_builder_add(builder, "{sv}",
       "AutoConnect", g_variant_new_boolean(TRUE));
 
-    /* NOTE, lazy stuff, assume the entire service record to
-       require 2K bytes at most */
-    char sdp_record[2048] = {0};
+    /* lazy stuff, for now we restrict records to 2047 bytes at
+       most. NOTE, that this is actually not that much and can
+       be easily exceeded */
+    gchar rec[2048] = {0};
+
+    sprintf(rec, MY_INTERCOM_SDP_RECORD,
+      27, 0xdead, "BITZAP-Intercom-Profile", 0);
 
     /* provide a service record to be inserted into the SDP
        database, test with 'sdptool' on your remote device
        whether you can find the record or not */
-    sprintf(sdp_record, MY_INTERCOM_SDP_RECORD,
-      27, 0xdead, "BITZAP-Intercom-Profile", 0);
-
     g_variant_builder_add(builder, "{sv}", "ServiceRecord",
-      g_variant_new_string(sdp_record));
+      g_variant_new_string(rec));
 
     dict = g_variant_builder_end(builder);
     g_variant_builder_unref(builder);
@@ -154,6 +151,52 @@ static void register_profile(gboolean enable)
 
 /******************************************************************************/
 
+static gboolean data_writer(GIOChannel *channel,
+                            GIOCondition condition,
+                            gpointer user_data)
+{
+  if (condition & G_IO_OUT && data_sent == 0) {
+
+    GError *err = NULL;
+    gsize num_written;
+
+    const gchar *data =
+      "Satan oscillate my metallic sonatas";
+
+    GIOStatus s = g_io_channel_write_chars(
+      channel,
+      data,
+      strlen(data) + 1,
+      &num_written,
+      &err);
+
+    if (s != G_IO_STATUS_NORMAL || err != NULL)
+    { 
+      g_print("Failed writing sample data\n");
+    }
+    else
+    {
+      g_print("Written sample data:\n");
+      g_print("  '%s'\n", data);
+
+      data_sent = 1;
+
+      s = g_io_channel_shutdown(channel, TRUE, &err);
+
+      if (s != G_IO_STATUS_NORMAL || err != NULL)
+      { 
+        g_print("Failed shutting down channel\n");
+      }
+
+      return TRUE;
+    }
+  }
+
+  return FALSE;
+}
+
+/******************************************************************************/
+
 static void on_method_call(GDBusConnection *con,
                            const gchar *sender,
                            const gchar *obj_path,
@@ -163,10 +206,77 @@ static void on_method_call(GDBusConnection *con,
                            GDBusMethodInvocation *invoc,
                            gpointer udata)
 {
-  g_print("Calling method '%s'\n", method_name);
+  g_print("Calling method '%s':\n", method_name);
 
   if (strcmp(method_name, "NewConnection") == 0) {
-    g_print("  handling a new connection on client's side\n");
+    g_print("  handling a new connection on the client side\n");
+
+    GError *err = NULL;
+    GVariant *dict = NULL;
+
+    gint fd_index;
+    gchar *path;
+
+    /* now extract arguments submitted to 'NewConnection', for
+       the time being don't require the feature-dictionary */
+    g_variant_get(params, "(oh@a{sv})", &path, &fd_index, &dict);
+
+    GUnixFDList *fd_list = g_dbus_message_get_unix_fd_list(
+      g_dbus_method_invocation_get_message (invoc));
+
+    g_assert(
+      fd_list && "Failed obtaining a file descriptor list");
+
+    g_assert(fd_index < g_unix_fd_list_get_length(fd_list) &&
+             "File descriptor index out of range");
+
+    gint fd = g_unix_fd_list_get(fd_list, fd_index, &err);
+
+    g_assert(err == NULL && fd >= 0 &&
+             "Failed extracting file descriptor");
+
+    g_print("  obtained sender path: %s\n", path);
+    g_print("  obtained file descriptor index: %d\n", fd_index);
+    g_print("  obtained file descriptor: %d\n", fd);
+
+    GIOChannel *channel = g_io_channel_unix_new(fd);
+
+    g_assert(channel && "Failed creating a channel");
+
+    g_io_channel_set_close_on_unref(channel, TRUE);
+    g_io_channel_set_encoding(channel, NULL, NULL);
+    g_io_channel_set_buffered(channel, FALSE);
+
+    (void) g_io_add_watch(
+      channel,      /* channel to watch */
+      G_IO_OUT |    /* watch if we can write data */
+      G_IO_HUP |    /* watch broken sockets */
+      G_IO_NVAL |   /* watch invalid sockets */
+      G_IO_ERR,     /* watch other errors */
+      data_writer,  /* processing callback */
+      NULL);        /* user data */
+
+    g_io_channel_unref(channel);
+    g_free(path);
+
+    /* finally, process the dictionary and make valgrind happy */
+    g_print("  processing dictionary argument:\n");
+
+    gchar *dict_key;
+    GVariant *dict_val;
+    GVariantIter iter;
+    
+    g_variant_iter_init(&iter, dict);
+
+    /* process the dictionary and make valgrind happy */
+    while (g_variant_iter_loop(&iter, "{sv}", &dict_key, &dict_val))
+    {
+      g_print("    entry key: %s\n", dict_key);
+      g_variant_unref(dict_val);
+    }
+
+    /* the method call is incomplete without a proper receipt */
+    g_dbus_method_invocation_return_value(invoc, NULL);
   }
 }
 
@@ -176,7 +286,8 @@ int main(int argc, char **argv)
 {
   GError *err = NULL;
 
-  conn = g_bus_get_sync(G_BUS_TYPE_SYSTEM, NULL, &err);
+  GDBusConnection *conn =
+    g_bus_get_sync(G_BUS_TYPE_SYSTEM, NULL, &err);
 
   if (!conn || err != NULL) return 0;
 
@@ -212,7 +323,7 @@ int main(int argc, char **argv)
   } else g_print("ok\n");
 
   g_print("Registering profile\n");
-  register_profile(TRUE);
+  register_profile(conn, TRUE);
 
   signal(SIGINT, on_signal_received);
 
@@ -222,14 +333,14 @@ int main(int argc, char **argv)
   g_idle_add(on_loop_idle, NULL);
   g_main_loop_run(loop);
 
-  /* we are done, tear everything down now. Don't wait to be
-     called back, bounce in the most ungraceful way for now */
-  g_print("\nUnregistering profile\n");
-  register_profile(FALSE);
+  /* we are done, tear everything down now */
+  g_print("Unregistering profile\n");
+  register_profile(conn, FALSE);
+
+  g_dbus_connection_unregister_object(conn, reg_id);
 
 done:
   g_main_loop_unref(loop);
-  g_dbus_node_info_unref(introspect_data);
   g_object_unref(conn);
   return 0;
 }

@@ -11,6 +11,7 @@
 #include <sys/socket.h>
 #include <bluetooth/bluetooth.h>
 #include <bluetooth/l2cap.h>
+#include <bluetooth/rfcomm.h>
 
 #define PACKET_LENGTH 8
 
@@ -18,7 +19,7 @@
 //
 int main(int argc, char **argv)
 {
-  struct sockaddr_l2 addr = {0};
+  struct sockaddr_rc addr = {0};
   int s, status;
   char *message = "hello!";
   char dest[18] = {0};
@@ -29,12 +30,14 @@ int main(int argc, char **argv)
   }
 
   strncpy(dest, argv[1], 18);
-  s = socket(AF_BLUETOOTH, SOCK_SEQPACKET, BTPROTO_L2CAP);
+  s = socket(AF_BLUETOOTH, SOCK_STREAM, BTPROTO_RFCOMM);
 
   // set the connection parameters (who to connect to)
-  addr.l2_family = AF_BLUETOOTH;
-  addr.l2_psm = htobs(0x1001);
-  str2ba( dest, &addr.l2_bdaddr );
+  addr.rc_family = AF_BLUETOOTH;
+  addr.rc_bdaddr = *BDADDR_ANY;
+  addr.rc_channel = 27;  /* test */
+
+  str2ba(dest, &addr.rc_bdaddr);
 
   /* connect to them morse server that does decoding */
   status = connect(s, (struct sockaddr *)&addr, sizeof(addr));

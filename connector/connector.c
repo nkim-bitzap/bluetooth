@@ -310,7 +310,7 @@ static int connect_device(GDBusConnection *conn,
                                     NULL,
                                     &error);
 
-      g_variant_unref(p_res);
+      if (p_res != NULL) g_variant_unref(p_res);
 
       if (error != NULL)
       {
@@ -335,21 +335,25 @@ static int connect_device(GDBusConnection *conn,
                                 NULL,
                                 &error);
 
-  /* make valgrind shut up */
-  g_variant_unref(res);
+  if (res != NULL)
+    g_variant_unref(res);
 
-  if (error != NULL)
+  if (error != NULL || res == NULL)
   {
     if (connect)
       g_print("  connection failed\n");
     else g_print("  disconnection failed\n");
+
     return -1;
   }
+  else
+  {
+    if (connect)
+      g_print("  connection established\n");
+    else g_print("  connection terminated\n");
 
-  if (connect)
-    g_print("  connection established\n");
-  else g_print("  connection terminated\n");
-  return 0;
+    return 0;
+  }
 }
 
 /******************************************************************************/

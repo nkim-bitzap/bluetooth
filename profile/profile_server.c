@@ -4,8 +4,8 @@
    Abstract: Simple C DBus/BlueZ profile registration example
 
    Description:
-     This handles the profile registration on the server side. By
-     registering the profile with "Role=server" the profile gets
+     This handles the profile registraction on the server side.
+     By registering the profile with "Role=server" the profile gets
      attached to the local adapter ('probe') which becomes visible
      to remotes upon connecting/pairing. */
 
@@ -107,18 +107,13 @@ static void register_profile(gboolean enable)
     g_variant_builder_add(builder, "{sv}",
       "AutoConnect", g_variant_new_boolean(TRUE));
 
-    /* NOTE, lazy stuff, assume the entire service record to
-       require 2K bytes at most */
-    char sdp_record[2048] = {0};
-
     /* provide a service record to be inserted into the SDP
        database, test with 'sdptool' on your remote device
        whether you can find the record or not */
-    sprintf(sdp_record, MY_INTERCOM_SDP_RECORD,
-      27, 0xdead, "BITZAP-Intercom-Profile", 0);
-
     g_variant_builder_add(builder, "{sv}", "ServiceRecord",
-      g_variant_new_string(sdp_record));
+      g_variant_new_string(g_strdup_printf(
+        MY_INTERCOM_SDP_RECORD, 27, 0xdead,
+        "BITZAP-Intercom-Profile", 0)));
 
     dict = g_variant_builder_end(builder);
     g_variant_builder_unref(builder);
@@ -162,7 +157,7 @@ static void on_method_call(GDBusConnection *con,
   g_print("Calling method '%s'\n", method_name);
 
   if (strcmp(method_name, "NewConnection") == 0) {
-    g_print("  handling a new connection on server's side\n");
+    g_print("  connected...\n");
   }
 }
 
@@ -220,8 +215,7 @@ int main(int argc, char **argv)
   g_idle_add(on_loop_idle, NULL);
   g_main_loop_run(loop);
 
-  /* we are done, tear everything down now. Don't wait to be
-     called back, bounce in the most ungraceful way for now */
+  /* we are done, tear everything down now */
   g_print("\nUnregistering profile\n");
   register_profile(FALSE);
 
