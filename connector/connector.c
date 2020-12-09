@@ -1,5 +1,5 @@
 /******************************************************************************/
-/* File: advertizer.c
+/* File: connector.c
    Author: N.Kim
    Abstract: Simple C DBus/BlueZ connection/pairing example */
 /******************************************************************************/
