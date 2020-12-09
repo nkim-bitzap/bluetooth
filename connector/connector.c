@@ -56,11 +56,7 @@ void free_device_string(gpointer data)
 }
 
 /******************************************************************************/
-/* Watch the state of the adapter and insert detected remove devices as
-   they come in */
-
-/******************************************************************************/
-/* Watch the state of the adapter and insert detected remove devices as
+/* Watch the state of the adapter and insert detected remote devices as
    they come in */
 
 static void on_adapter_changed(GDBusConnection *conn,
