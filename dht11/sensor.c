@@ -115,9 +115,7 @@ int init_sensor_reading() {
      become 'stable' */
   gpioSetMode(DHT_GPIO_PORT, PI_OUTPUT);
   gpioSetPullUpDown(DHT_GPIO_PORT, PI_PUD_DOWN);
-
   gpioSleep(PI_TIME_RELATIVE, 1, 0);
-  gpioSetMode(DHT_GPIO_PORT, PI_OUTPUT);
 
   /* pull on low for min. 18msec. After this the manual becomes barely
      understandable. Especially, its unclear whether the pulse of 20-40 usec
